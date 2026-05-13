@@ -1,0 +1,12 @@
+[[redirects]]
+from = "/api/dify"
+to = "https://api.dify.ai/v1/workflows/run"
+status = 200
+force = true
+headers = { Authorization = "Bearer {DIFY_API_KEY}", Content-Type = "application/json" }
+
+[[redirects]]
+from = "/api/tts"
+to = "https://api.mimikko.cn/tts"
+status = 200
+force = true
