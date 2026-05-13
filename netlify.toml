@@ -1,0 +1,17 @@
+[build]
+  publish = "."
+
+[functions]
+  node_bundler = "esbuild"
+  directory = "netlify/functions"
+
+# 将 /api/* 请求路由到对应的 Netlify Function
+[[redirects]]
+  from = "/api/chat-messages"
+  to = "/.netlify/functions/chat-messages"
+  status = 200
+
+[[redirects]]
+  from = "/api/tts"
+  to = "/.netlify/functions/tts"
+  status = 200
