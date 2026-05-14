@@ -887,9 +887,18 @@ async function sendMessage() {
    🔊 语音输出 (小米 MiMo TTS + 浏览器降级)
 ====================== */
 const TTS_VOICES = {
-  nurse: { voice: 'default_zh', style: '请用温暖沉稳的护士语气朗读，语速稍慢，像在轻声安抚一位悲伤的人。' },
-  psychologist: { voice: 'default_zh', style: '请用温和专业的心理咨询师语气朗读，语调沉稳平和，给人安全感。' },
-  peer: { voice: 'default_zh', style: '请用亲切真诚、略带关切的语气朗读，像一位经历过相似伤痛的朋友在分享。' },
+  nurse: {
+    voiceDesign:
+      '三十五岁左右的女护士长，声音温暖而略带沙哑。语速缓慢沉稳，语调轻柔但有力，像是在病床旁握着你的手轻声安慰。每句话之后留出自然的呼吸停顿，声音里透着包容与安心。',
+  },
+  psychologist: {
+    voiceDesign:
+      '四十多岁的女性心理咨询师，音色醇和而沉稳。语调平稳、不急不缓，带着专业的沉静与温和。语速适中偏慢，在关键处略微放慢，给对方足够的空间去感受。声音像深夜电台，让人愿意敞开心扉。',
+  },
+  peer: {
+    voiceDesign:
+      '三十岁出头的年轻人，声音亲切真诚，不刻意修饰。语调温暖但不煽情，带着一种“我懂你”的朴实共情。语速适中，像是和朋友坐在安静角落聊天，平等、真实、不做作。',
+  },
 };
 
 let currentAudio = null;
@@ -902,12 +911,12 @@ async function playTTS(text) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'mimo-v2.5-tts',
+        model: 'mimo-v2.5-tts-voicedesign',
         messages: [
-          { role: 'user', content: ttsConfig.style },
+          { role: 'user', content: ttsConfig.voiceDesign },
           { role: 'assistant', content: cleanText }
         ],
-        audio: { format: 'wav', voice: ttsConfig.voice }
+        audio: { format: 'wav', optimize_text_preview: true }
       })
     });
     if (!response.ok) throw new Error('TTS API error');
