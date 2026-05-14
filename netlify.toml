@@ -15,3 +15,13 @@
   from = "/api/tts"
   to = "/.netlify/functions/tts"
   status = 200
+
+[[redirects]]
+  from = "/api/submit"
+  to = "/.netlify/functions/submit-form"
+  status = 200
+
+[[redirects]]
+  from = "/api/audio-to-text"
+  to = "/.netlify/functions/audio-to-text"
+  status = 200

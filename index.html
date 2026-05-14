@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>心语陪伴师</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="心语陪伴师">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 
 <style>
 /* =========================
@@ -459,6 +463,82 @@ input::placeholder { color: var(--text-muted); opacity: 0.6; }
   cursor: pointer;
 }
 
+/* ===== 用户信息收集弹窗 ===== */
+.info-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(30, 28, 26, 0.6);
+  backdrop-filter: blur(6px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.6s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.info-modal {
+  background: var(--bubble-ai);
+  border-radius: 24px;
+  padding: 32px 24px 24px;
+  width: 90%;
+  max-width: 380px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  animation: modalUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes modalUp {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.info-modal h2 {
+  text-align: center;
+  font-size: 18px;
+  font-weight: 500;
+  margin: 0 0 4px;
+  color: var(--text-main);
+}
+.info-modal .modal-sub {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+.info-field {
+  margin-bottom: 14px;
+}
+.info-field label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.info-field input {
+  width: 100%;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-main);
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.info-field input:focus { border-color: #aaa; }
+.info-submit-btn {
+  width: 100%;
+  border: none;
+  border-radius: 14px;
+  padding: 12px;
+  font-size: 15px;
+  margin-top: 8px;
+  cursor: pointer;
+  background: var(--text-main);
+  color: var(--bg-primary);
+  font-family: inherit;
+  transition: opacity 0.2s;
+}
+.info-submit-btn:hover { opacity: 0.85; }
+
 </style>
 </head>
 
@@ -516,7 +596,7 @@ input::placeholder { color: var(--text-muted); opacity: 0.6; }
     </div>
 
     <div class="input-box">
-      <button class="voice-btn" id="voice-btn">🎙</button>
+      <button class="voice-btn" id="voice-btn" title="按住说话">🎤</button>
       <input type="text" id="input" placeholder="想说的时候再开口..." onkeypress="handleKeyPress(event)">
       <button class="send-btn" onclick="sendMessage()">➔</button>
     </div>
@@ -524,7 +604,7 @@ input::placeholder { color: var(--text-muted); opacity: 0.6; }
 </div>
 
 <audio id="rain-audio" loop>
-  <source src="https://cdn.pixabay.com/audio/2022/03/15/audio_7d06f0d5ce.mp3" type="audio/mpeg">
+  <source src="rain.wav" type="audio/wav">
 </audio>
 
 <script>
@@ -535,7 +615,8 @@ input::placeholder { color: var(--text-muted); opacity: 0.6; }
 const DIFY_API_URL = "/api/chat-messages";
 
 // 2. MiMo TTS — 由 Vercel Edge Function 代理，密钥服务端注入
-const MIMO_API_URL = "/api/tts"; 
+const MIMO_API_URL = "/api/tts";
+const AUDIO_API_URL = "/api/audio-to-text";
 
 /* ======================
    全局变量
@@ -696,7 +777,7 @@ async function sendMessage() {
     const response = await fetch(DIFY_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: text, response_mode: "blocking", user: "user_01", inputs: { role: currentRole } })
+      body: JSON.stringify({ query: text, response_mode: "blocking", user: (getUserInfo() || {}).userId || "anonymous", inputs: { role: currentRole } })
     });
     if (!response.ok) throw new Error("API Error");
     const data = await response.json();
@@ -709,52 +790,103 @@ async function sendMessage() {
 }
 
 /* ======================
-   🎙 语音输入 (Web Speech API)
+   🎙 语音输入 (MediaRecorder → Dify Audio-to-Text)
 ====================== */
-if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const rec = new SpeechRecognition();
-  rec.lang = "zh-CN";
-  rec.continuous = false;
-  rec.interimResults = false;
+(function initVoiceInput() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    voiceBtn.style.display = "none";
+    return;
+  }
+
+  let mediaRecorder = null;
+  let audioChunks = [];
   let isRecording = false;
+  let stream = null;
 
-  voiceBtn.onclick = () => {
-    if (isRecording) { rec.stop(); } 
-    else { rec.start(); }
-  };
+  async function startRecording() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/wav";
+      mediaRecorder = new MediaRecorder(stream, { mimeType });
+      audioChunks = [];
 
-  rec.onstart = () => {
-    isRecording = true;
-    voiceBtn.classList.add("recording");
-    inputField.placeholder = "正在倾听...";
-  };
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
 
-  rec.onresult = e => { inputField.value = e.results[0][0].transcript; };
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        stream = null;
+        if (audioChunks.length === 0) return;
 
-  rec.onend = () => {
+        inputField.placeholder = "识别中...";
+        const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+        const format = mediaRecorder.mimeType.includes("webm") ? "webm" : "wav";
+
+        try {
+          const buffer = await blob.arrayBuffer();
+          const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+
+          const resp = await fetch(AUDIO_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ audio: base64, format }),
+          });
+
+          const data = await resp.json();
+          if (data.text) {
+            inputField.value = data.text;
+            sendMessage();
+          } else {
+            inputField.placeholder = "未能识别，请打字输入...";
+          }
+        } catch (err) {
+          console.log("语音识别失败:", err.message);
+          inputField.placeholder = "识别失败，请打字输入...";
+        }
+      };
+
+      mediaRecorder.start();
+      isRecording = true;
+      voiceBtn.classList.add("recording");
+      inputField.placeholder = "正在倾听...";
+    } catch (err) {
+      console.log("麦克风权限被拒绝:", err.message);
+      voiceBtn.style.display = "none";
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+    }
     isRecording = false;
     voiceBtn.classList.remove("recording");
-    inputField.placeholder = "想说的时候再开口...";
-    if (inputField.value.trim() !== "") sendMessage(); 
-  };
+  }
 
-  rec.onerror = () => {
-    isRecording = false;
-    voiceBtn.classList.remove("recording");
-    inputField.placeholder = "想说的时候再开口...";
-  };
-} else {
-  voiceBtn.style.display = "none"; 
-}
+  voiceBtn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (!isRecording) startRecording();
+  });
+  voiceBtn.addEventListener("pointerup", (e) => {
+    e.preventDefault();
+    if (isRecording) stopRecording();
+  });
+  voiceBtn.addEventListener("pointerleave", () => {
+    if (isRecording) stopRecording();
+  });
+  voiceBtn.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+  });
+})();
 
 /* ======================
    🔊 语音输出 (小米 MiMo TTS + 浏览器降级)
 ====================== */
 const TTS_VOICES = {
-  nurse: { voice: 'default_zh', style: '用温暖沉稳的护士语气朗读，像在轻声安抚。' },
-  psychologist: { voice: 'default_zh', style: '用温和专业的心理咨询师语气朗读，沉稳而有深度。' },
-  peer: { voice: 'default_zh', style: '用亲切真诚的朋友语气朗读，像在和一个理解你的人聊天。' },
+  nurse: { voice: 'bingtang', style: '用温暖沉稳的护士语气朗读，像在轻声安抚。' },
+  psychologist: { voice: 'moli', style: '用温和专业的心理咨询师语气朗读，沉稳而有深度。' },
+  peer: { voice: 'suda', style: '用亲切真诚的朋友语气朗读，像在和一个理解你的人聊天。' },
 };
 
 let currentAudio = null;
@@ -767,7 +899,7 @@ async function playTTS(text) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'mimo-v2-tts',
+        model: 'mimo-v2.5-tts',
         messages: [
           { role: 'user', content: ttsConfig.style },
           { role: 'assistant', content: cleanText }
@@ -812,8 +944,109 @@ function toggleRain() {
 }
 
 window.onload = () => {
-  setTimeout(() => { addAI("你好，我在这里。你不需要急着说什么，慢慢来。"); }, 800);
-};
+	  if (!showInfoModal()) {
+	    const info = getUserInfo();
+	    setTimeout(() => { addAI(info.name + ", 欢迎回来。我在这里。"); }, 800);
+	  }
+	};
+
+// ===== 用户信息收集 =====
+function generateUserId(name) {
+  const rand = Math.random().toString(36).substring(2, 6);
+  return `${name}_${rand}`;
+}
+
+function getUserInfo() {
+  try {
+    return JSON.parse(localStorage.getItem('grief_user_info'));
+  } catch(e) { return null; }
+}
+
+function showInfoModal() {
+  // 如果已有信息则跳过
+  if (getUserInfo()) return false;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'info-modal-overlay';
+  overlay.id = 'infoModal';
+  overlay.innerHTML = `
+    <div class="info-modal">
+      <h2>初次见面</h2>
+      <div class="modal-sub">这些信息仅用于研究统计，不会对外公开</div>
+      <div class="info-field">
+        <label>昵称（如 小明）</label>
+        <input type="text" id="p-name" placeholder="请输入称呼" maxlength="20">
+      </div>
+      <div class="info-field">
+        <label>性别</label>
+        <input type="text" id="p-gender" placeholder="如 男 / 女" maxlength="10">
+      </div>
+      <div class="info-field">
+        <label>年龄范围</label>
+        <input type="text" id="p-age" placeholder="如 30-39岁" maxlength="20">
+      </div>
+      <div class="info-field">
+        <label>您与逝者的关系</label>
+        <input type="text" id="p-relation" placeholder="如 配偶 / 父母 / 子女" maxlength="20">
+      </div>
+      <div class="info-field">
+        <label>距离离世的时间</label>
+        <input type="text" id="p-time" placeholder="如 3个月 / 1年" maxlength="20">
+      </div>
+      <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text-muted);margin-bottom:10px;cursor:pointer;">
+        <input type="checkbox" id="p-consent" style="width:16px;height:16px;flex-shrink:0;margin-top:1px;">
+        <span>我已阅读并同意参与本项数字干预研究，知晓我的对话数据将在脱敏后仅用于学术分析与工具优化。</span>
+      </label>
+      <button class="info-submit-btn" onclick="saveUserInfo()">开始对话</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  return true;
+}
+
+function saveUserInfo() {
+  const name = document.getElementById('p-name').value.trim();
+  if (!name) { alert('请至少填写昵称'); return; }
+  if (!document.getElementById('p-consent').checked) { alert('请先阅读并同意知情同意条款'); return; }
+
+  const info = {
+    userId: generateUserId(name),
+    name: name,
+    gender: document.getElementById('p-gender').value.trim(),
+    age: document.getElementById('p-age').value.trim(),
+    relation: document.getElementById('p-relation').value.trim(),
+    time: document.getElementById('p-time').value.trim(),
+    consent: true
+  };
+
+  localStorage.setItem('grief_user_info', JSON.stringify(info));
+
+  // 静默提交到 Google Forms（通过 Netlify 代理）
+  fetch('/api/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: info.userId,
+      gender: info.gender,
+      age: info.age,
+      relation: info.relation,
+      time: info.time
+    })
+  }).catch(() => {}); // 静默失败，不影响主流程
+
+  // 关闭弹窗
+  const modal = document.getElementById('infoModal');
+  if (modal) {
+    modal.style.opacity = '0';
+    modal.style.transition = 'opacity 0.3s';
+    setTimeout(() => modal.remove(), 300);
+  }
+
+  // 简短欢迎
+  setTimeout(() => {
+    addAI(`${name}，你好。这里是一个安全的空间，我会一直陪着你。`);
+  }, 400);
+}
 
 </script>
 </body>
