@@ -1,27 +1,6 @@
 // Netlify Function — Dify Audio-to-Text 代理
 const DIFY_URL = "https://api.dify.ai/v1/audio-to-text";
 
-function buildMultipart(fields) {
-  const boundary = "----FormBoundary" + Math.random().toString(36).slice(2);
-  const parts = [];
-  for (const [name, value] of Object.entries(fields)) {
-    if (value.type === "file") {
-      parts.push(
-        `--${boundary}\r\nContent-Disposition: form-data; name="${name}"; filename="${value.filename}"\r\nContent-Type: ${value.contentType}\r\n\r\n`
-      );
-      parts.push(Buffer.isBuffer(value.data) ? value.data : Buffer.from(value.data));
-      parts.push("\r\n");
-    } else {
-      parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`);
-    }
-  }
-  parts.push(`--${boundary}--\r\n`);
-
-  const buffers = parts.map((p) => (typeof p === "string" ? Buffer.from(p, "utf-8") : p));
-  const body = Buffer.concat(buffers);
-  return { body, boundary };
-}
-
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: JSON.stringify({ error: "Method not allowed" }) };
@@ -29,21 +8,20 @@ exports.handler = async (event) => {
 
   try {
     const { audio, format } = JSON.parse(event.body);
+    const buffer = Buffer.from(audio, "base64");
     const ext = format === "webm" ? "webm" : "wav";
     const mimeType = format === "webm" ? "audio/webm" : "audio/wav";
 
-    const { body, boundary } = buildMultipart({
-      file: { type: "file", filename: `recording.${ext}`, contentType: mimeType, data: Buffer.from(audio, "base64") },
-      user: "grief-companion-user",
-    });
+    const formData = new FormData();
+    formData.append("file", new Blob([buffer], { type: mimeType }), `recording.${ext}`);
+    formData.append("user", "grief-companion-user");
 
     const response = await fetch(DIFY_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.DIFY_API_KEY}`,
-        "Content-Type": `multipart/form-data; boundary=${boundary}`,
       },
-      body,
+      body: formData,
     });
 
     const data = await response.json();

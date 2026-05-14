@@ -6,8 +6,10 @@
 <title>心语陪伴师</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="心语陪伴师">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💙%3C/text%3E%3C/svg%3E">
 
 <style>
 /* =========================
@@ -605,6 +607,7 @@ input::placeholder { color: var(--text-muted); opacity: 0.6; }
 
 <audio id="rain-audio" loop>
   <source src="rain.wav" type="audio/wav">
+  <source src="rain.mp3" type="audio/mpeg">
 </audio>
 
 <script>
@@ -884,9 +887,9 @@ async function sendMessage() {
    🔊 语音输出 (小米 MiMo TTS + 浏览器降级)
 ====================== */
 const TTS_VOICES = {
-  nurse: { voice: 'bingtang', style: '用温暖沉稳的护士语气朗读，像在轻声安抚。' },
-  psychologist: { voice: 'moli', style: '用温和专业的心理咨询师语气朗读，沉稳而有深度。' },
-  peer: { voice: 'suda', style: '用亲切真诚的朋友语气朗读，像在和一个理解你的人聊天。' },
+  nurse: { voice: 'default_zh', style: '请用温暖沉稳的护士语气朗读，语速稍慢，像在轻声安抚一位悲伤的人。' },
+  psychologist: { voice: 'default_zh', style: '请用温和专业的心理咨询师语气朗读，语调沉稳平和，给人安全感。' },
+  peer: { voice: 'default_zh', style: '请用亲切真诚、略带关切的语气朗读，像一位经历过相似伤痛的朋友在分享。' },
 };
 
 let currentAudio = null;
