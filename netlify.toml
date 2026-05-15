@@ -22,6 +22,11 @@
   status = 200
 
 [[redirects]]
-  from = "/api/audio-to-text"
-  to = "/.netlify/functions/audio-to-text"
+  from = "/api/audio-understanding"
+  to = "/.netlify/functions/audio-understanding"
+  status = 200
+
+[[redirects]]
+  from = "/api/feedback"
+  to = "/.netlify/functions/feedback"
   status = 200
